@@ -1,43 +1,46 @@
 
-# DOM_QUERY
+# SLATE_QUERY
+Do Not Use
 
-> A crate for manipulating HTML with CSS selectors.
+<div style="padding-top: 1000px">
+</div>
 
-[![Crates.io version](https://img.shields.io/crates/v/dom_query.svg?style=flat)](https://crates.io/crates/dom_query)
-[![Download](https://img.shields.io/crates/d/dom_query.svg?style=flat)](https://crates.io/crates/dom_query)
-[![docs.rs docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat)](https://docs.rs/dom_query)
-[![Build Status](https://github.com/niklak/dom_query/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/niklak/dom_query/actions/workflows/rust.yml)
-[![CircleCI](https://circleci.com/gh/niklak/dom_query.svg?style=shield)](https://app.circleci.com/pipelines/github/niklak/dom_query)
+> A crate for manipulating [SLATE-JSON](https://github.com/cameronbraid/slate_query) with CSS selectors, and includes a html like representation of slate-js
 
-DOM_QUERY is based on HTML crate html5ever and the CSS selector crate selectors. You can use the jQuery-like syntax to query and manipulate an HTML document quickly. **With its help you can query dom and modify it.**.
+SLATE_QUERY is based on HTML crate html5ever and the CSS selector crate selectors. You can use the jQuery-like syntax to query and manipulate an slate-js document quickly. **With its help you can query and modify it.**.
 
-It is a fork of [nipper](https://crates.io/crates/nipper), with some updates. Also this fork supports `:has`, `:has-text`, `:contains` pseudo-classes, and some others.
+It is a fork of [dom_query](https://github.com/niklak/dom_query), with a fair amount of changes to work with the slate js data model
 
 ## Example
 
 #### Extract the hacker news.
 
 ```rust
-use dom_query::Document;
+use slare_query::Document;
 
 fn main() {
-    let html = include_str!("../test-pages/hacker_news.html");
+    let html = r#"
+      <h1><text>Welcome to slate-query</text></h1>
+      <p><text>slate </text><text bold="true">with css</text></p>
+    "#;
     let document = Document::from_slate_html(html);
 
-    document.select("tr.athing:has(a[href][id])").iter().for_each(|athing| {
-        let title = athing.select(".title a");
-        let href = athing.select(".storylink");
-        println!("{}", title.text());
-        println!("{}", href.attr("href").unwrap());
+    document.select("p").iter().for_each(|p| {
+        let first = p.select("text:first-child");
+        let bolded = p.select("text[bold=true]");
+        println!("{}", first.text());
+        println!("{}", bolded.text());
     });
+
+    // TODO!
+    //assert_eq!(document.to_json_string(), r#"[{"type":"h1","children":[{"text":"Welcome to slate-query"}]},{"type":"p","children":[{"text":"slate "}, {"bold":true,"text":"with css"}]}]"#)
 }
 ```
 
-#### Readability. 
-[examples/readability.rs](./examples/readability.rs)
 
 ## Related projects
 
+* [dom_query](https://github.com/niklak/dom_query)
 * [nipper](https://crates.io/crates/nipper)
 * [html5ever](https://crates.io/crates/html5ever)
 * [selectors](https://crates.io/crates/selectors)

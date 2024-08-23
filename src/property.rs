@@ -110,6 +110,8 @@ impl<'a> Selection<'a> {
         let mut s = StrTendril::new();
 
         for node in self.nodes() {
+          eprintln!("node: {:?}", node);
+            
             s.push_tendril(&node.text());
         }
         s

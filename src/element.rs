@@ -260,10 +260,6 @@ fn attr_matches(
     operation: &AttrSelectorOperation<&crate::css::CssString>,
 ) -> bool {
     return attribs.iter().any(|attr| {
-        // match *ns {
-        //   // not sure if this is correct
-        //   NamespaceConstraint::Specific(_url) => true,
-        //   _ => {
         if local_name.deref() != &attr.name[..] {
             return false;
         }
@@ -274,7 +270,6 @@ fn attr_matches(
             _ => false,
         }
     });
-    // });
 }
 
 fn has_descendant_match(
@@ -285,7 +280,7 @@ fn has_descendant_match(
     let mut node = n.first_child();
     while let Some(ref n) = node {
         if matches_selector_list(selectors_list, n, ctx)
-            || (n.is_element() && has_descendant_match(n, selectors_list, ctx))
+            || ((n.is_element() || n.is_text()) && has_descendant_match(n, selectors_list, ctx))
         {
             return true;
         }

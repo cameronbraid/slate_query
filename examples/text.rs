@@ -1,32 +1,18 @@
 use dom_query::Document;
 
 fn main() {
-    let document = Document::from_slate_html(
-        r#"                <div class="loginContent">
-    <div class="loginContentbg">
-        <div class="el-dialog__wrapper login-dialog">
-            <div role="dialog" aria-modal="true" aria-label="dialog"
-                class="el-dialog el-dialog--center">
-                <!---->
-            </div>
-        </div>
-        <div class="el-dialog__wrapper login-dialog">
-            <div role="dialog" aria-modal="true" aria-label="dialog"
-                class="el-dialog el-dialog--center">
-                <!---->
-                <!---->
-            </div>
-        </div>
-    </div>
-</div>"#,
-    );
+    let html = r#"
+        <h1><text>Welcome to slate-query</text></h1>
+        <p><text>slate </text><text bold="true">with css</text></p>
+    "#;
+    let document = Document::from_slate_html(html);
 
-    let mut div = document.select("div.loginContent");
-    println!("{}", div.is("div"));
-
-    println!("|{}|", div.text().trim());
-
-    div.remove();
-
-    println!("{}", document.html());
+    document.select("p").iter().for_each(|p| {
+        eprintln!("p {:?}", p.outer_html());
+        let text = p.select("text:first-child");
+        // let bolded = p.select("text[bold=true]");
+        // println!("{}", text.outer_html());
+        println!("{}", text.text());
+        // println!("{}", bolded.text());
+    });
 }
