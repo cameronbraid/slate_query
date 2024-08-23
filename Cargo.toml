@@ -20,6 +20,8 @@ tendril = "0.4.3"
 markup5ever = "0.12.1"
 rustc-hash = "2.0.0"
 hashbrown = {version = "0.14.5", default-features = false, features = ["allocator-api2", "inline-more"], optional = true}
+serde = { version = "1", default-features = false, features = ["serde_derive"]}
+serde_json = "1.0"
 
 [dev-dependencies]
 regex = "1.10.5"

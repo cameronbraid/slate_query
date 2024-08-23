@@ -94,7 +94,7 @@ fn test_next_none() {
 
 #[test]
 fn test_nth_child() {
-    let doc: Document = r#"<!DOCTYPE html>
+    let doc = Document::from_slate_html(r#"<!DOCTYPE html>
     <html lang="en">
         <head></head>
     
@@ -112,8 +112,7 @@ fn test_nth_child() {
                 </div>
             </div>
         </body>
-    </html>"#
-        .into();
+    </html>"#);
 
     let a = doc
         .select("body > div.container.container-main > div.row:nth-child(2) > div.col-md-10 > a");

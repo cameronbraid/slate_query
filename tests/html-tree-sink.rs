@@ -1,4 +1,4 @@
-use dom_query::{Document, NodeId};
+use dom_query::{DocumentTreeSink, NodeId};
 use html5ever::driver;
 use html5ever::tendril::TendrilSink;
 use html5ever::ExpandedName;
@@ -10,7 +10,7 @@ use tendril::StrTendril;
 
 struct LineCountingDOM {
     pub line_vec: Vec<(QualName, u64)>,
-    pub dom: Document,
+    pub dom: DocumentTreeSink,
     pub current_line: u64,
 }
 
@@ -120,7 +120,7 @@ fn check_four_lines() {
     let sink = LineCountingDOM {
         line_vec: vec![],
         current_line: 1,
-        dom: Document::default(),
+        dom: DocumentTreeSink::default(),
     };
     let mut result_tok = driver::parse_document(sink, Default::default());
     result_tok.process(StrTendril::from("<a>\n"));

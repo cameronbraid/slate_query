@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use markup5ever::{local_name, namespace_url, ns};
+use markup5ever::{namespace_url, ns};
 use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
 use selectors::context::MatchingContext;
 use selectors::matching::{matches_selector_list, ElementSelectorFlags};
@@ -8,8 +8,9 @@ use selectors::parser::SelectorImpl;
 use selectors::{OpaqueElement, SelectorList};
 
 use crate::css::CssLocalName;
-use crate::dom_tree::{Node, NodeData, NodeRef};
+use crate::dom_tree::{Node, NodeRef};
 use crate::matcher::{InnerSelector, NonTSPseudoClass};
+use crate::{Attrib, NodeData};
 
 impl<'a> selectors::Element for Node<'a> {
     type Impl = InnerSelector;
@@ -56,11 +57,10 @@ impl<'a> selectors::Element for Node<'a> {
 
     #[inline]
     fn is_html_element_in_html_document(&self) -> bool {
-        self.query(|node| {
-            if let NodeData::Element(ref e) = node.data {
-                return e.name.ns == ns!(html);
-            }
-            false
+        self.query(|node| match node.data {
+            NodeData::Element(_) => true,
+            NodeData::Text(_) => true,
+            _ => false,
         })
         .unwrap_or(false)
     }
@@ -69,9 +69,11 @@ impl<'a> selectors::Element for Node<'a> {
     fn has_local_name(&self, local_name: &<Self::Impl as SelectorImpl>::BorrowedLocalName) -> bool {
         self.query(|node| {
             if let NodeData::Element(ref e) = node.data {
-                return &e.name.local == local_name.deref();
+                return &e.name[..] == local_name.deref();
             }
-
+            if let NodeData::Text(_) = node.data {
+                return local_name.deref() == "text";
+            }
             false
         })
         .unwrap_or(false)
@@ -80,12 +82,14 @@ impl<'a> selectors::Element for Node<'a> {
     // Empty string for no namespace.
     #[inline]
     fn has_namespace(&self, ns: &<Self::Impl as SelectorImpl>::BorrowedNamespaceUrl) -> bool {
-        self.query(|node| {
-            if let NodeData::Element(ref e) = node.data {
-                return &e.name.ns == ns;
+        self.query(|node| match node.data {
+            NodeData::Element(_) => {
+                return ns == &ns!(html);
             }
-
-            false
+            NodeData::Text(_) => {
+                return ns == &ns!(html);
+            }
+            _ => false,
         })
         .unwrap_or(false)
     }
@@ -95,31 +99,24 @@ impl<'a> selectors::Element for Node<'a> {
     fn is_same_type(&self, other: &Self) -> bool {
         //TODO: maybe we should unpack compare_node directly here
         self.tree
-            .compare_node(&self.id, &other.id, |a, b| {
-                if let (NodeData::Element(ref e1), NodeData::Element(ref e2)) = (&a.data, &b.data) {
-                    e1.name == e2.name
-                } else {
-                    false
-                }
+            .compare_node(&self.id, &other.id, |a, b| match (&a.data, &b.data) {
+                (NodeData::Element(ref e1), NodeData::Element(ref e2)) => e1.name == e2.name,
+                (NodeData::Text(_), NodeData::Text(_)) => true,
+                _ => false,
             })
             .unwrap_or(false)
     }
 
     fn attr_matches(
         &self,
-        ns: &NamespaceConstraint<&<Self::Impl as SelectorImpl>::NamespaceUrl>,
+        _ns: &NamespaceConstraint<&<Self::Impl as SelectorImpl>::NamespaceUrl>,
         local_name: &<Self::Impl as SelectorImpl>::LocalName,
         operation: &AttrSelectorOperation<&<Self::Impl as SelectorImpl>::AttrValue>,
     ) -> bool {
-        self.query(|node| {
-            if let NodeData::Element(ref e) = node.data {
-                return e.attrs.iter().any(|attr| match *ns {
-                    NamespaceConstraint::Specific(url) if *url != attr.name.ns => false,
-                    _ => *local_name.as_ref() == attr.name.local && operation.eval_str(&attr.value),
-                });
-            }
-
-            false
+        self.query(|node| match &node.data {
+            NodeData::Element(ref e) => attr_matches(&e.attrs, local_name, operation),
+            NodeData::Text(ref t) => attr_matches(&t.attrs, local_name, operation),
+            _context => false,
         })
         .unwrap_or(false)
     }
@@ -135,6 +132,7 @@ impl<'a> selectors::Element for Node<'a> {
                 false
             }
             AnyLink | Link => match self.node_name() {
+                // todo! make the document define what element types are 'links'
                 Some(node_name) => {
                     matches!(node_name.deref(), "a" | "area" | "link")
                         && self.attr("href").is_some()
@@ -146,7 +144,10 @@ impl<'a> selectors::Element for Node<'a> {
                 has_descendant_match(self, list, context)
             }
             HasText(s) => self.has_text(s.as_str()),
-            Contains(s) => self.text().contains(s.as_str()),
+            Contains(s) => {
+                let text = self.text();
+                text.contains(s.as_str())
+            }
         }
     }
 
@@ -160,15 +161,11 @@ impl<'a> selectors::Element for Node<'a> {
 
     // Whether this element is a `link`.
     fn is_link(&self) -> bool {
+        // todo! make the document define what element types are 'links'
         self.query(|node| {
             if let NodeData::Element(ref e) = node.data {
-                return matches!(
-                    e.name.local,
-                    local_name!("a") | local_name!("area") | local_name!("link")
-                ) && e
-                    .attrs
-                    .iter()
-                    .any(|attr| attr.name.local == local_name!("href"));
+                return matches!(&e.name[..], "a" | "area" | "link")
+                    && e.attrs.iter().any(|attr| &attr.name[..] == "href");
             }
 
             false
@@ -189,8 +186,12 @@ impl<'a> selectors::Element for Node<'a> {
         self.query(|node| {
             if let NodeData::Element(ref e) = node.data {
                 return e.attrs.iter().any(|attr| {
-                    attr.name.local.deref() == "id"
-                        && case_sensitivity.eq(name.as_bytes(), attr.value.as_bytes())
+                    if let Some(str) = attr.get_value_as_str_if_string() {
+                        &attr.name[..] == "id"
+                            && case_sensitivity.eq(name.as_bytes(), str.as_bytes())
+                    } else {
+                        false
+                    }
                 });
             }
 
@@ -209,11 +210,10 @@ impl<'a> selectors::Element for Node<'a> {
                 return e
                     .attrs
                     .iter()
-                    .find(|a| a.name.local == local_name!("class"))
+                    .find(|a| &a.name[..] == "class")
+                    .and_then(|v| v.get_value_as_str_if_string())
                     .map_or(false, |a| {
-                        a.value
-                            .deref()
-                            .split_whitespace()
+                        a.split_whitespace()
                             .any(|c| case_sensitivity.eq(name.as_bytes(), c.as_bytes()))
                     });
             }
@@ -222,7 +222,6 @@ impl<'a> selectors::Element for Node<'a> {
         })
         .unwrap_or(false)
     }
-
     // Returns the mapping from the `exportparts` attribute in the regular direction, that is, outer-tree->inner-tree.
     fn imported_part(&self, _name: &CssLocalName) -> Option<CssLocalName> {
         None
@@ -253,6 +252,29 @@ impl<'a> selectors::Element for Node<'a> {
     }
 
     fn apply_selector_flags(&self, _flags: ElementSelectorFlags) {}
+}
+
+fn attr_matches(
+    attribs: &Vec<Attrib>,
+    local_name: &CssLocalName,
+    operation: &AttrSelectorOperation<&crate::css::CssString>,
+) -> bool {
+    return attribs.iter().any(|attr| {
+        // match *ns {
+        //   // not sure if this is correct
+        //   NamespaceConstraint::Specific(_url) => true,
+        //   _ => {
+        if local_name.deref() != &attr.name[..] {
+            return false;
+        }
+        match &attr.value {
+            serde_json::Value::String(v) => operation.eval_str(&v),
+            serde_json::Value::Number(v) => operation.eval_str(&v.to_string()),
+            serde_json::Value::Bool(v) => operation.eval_str(&v.to_string()),
+            _ => false,
+        }
+    });
+    // });
 }
 
 fn has_descendant_match(

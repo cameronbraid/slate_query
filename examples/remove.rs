@@ -9,16 +9,16 @@ fn main() {
 </ul>
 "#;
 
-    let document = Document::from(html);
+    let document = Document::from_slate_html(html);
 
     let items = document.select("ul").select("li");
     let ul = items.parent();
 
-    println!("{}", ul.html());
+    println!("{}", ul.outer_html());
 
     for mut item in items.next_sibling().iter() {
         item.remove()
     }
 
-    println!("{}", document.select("ul").html());
+    println!("{}", document.select("ul").outer_html());
 }

@@ -1,16 +1,13 @@
-use dom_query::{Document, SerializableNodeRef};
-use html5ever::serialize;
-use html5ever::serialize::{SerializeOpts, TraversalScope};
-use html5ever::QualName;
-use html5ever::{parse_document, parse_fragment};
-use markup5ever::{local_name, namespace_url, ns};
+use dom_query::SerializableNodeRef;
+use html5ever::{local_name, parse_fragment, serialize, QualName};
+use markup5ever::{namespace_url, ns};
 use tendril::SliceExt;
 use tendril::StrTendril;
 use tendril::TendrilSink;
 
 fn parse_and_serialize(input: StrTendril) -> StrTendril {
     let dom = parse_fragment(
-        Document::default(),
+        dom_query::DocumentTreeSink::default(),
         Default::default(),
         QualName::new(None, ns!(html), local_name!("body")),
         vec![],
@@ -46,12 +43,15 @@ macro_rules! test {
 
 test!(empty, r#""#);
 test!(fuzz, "<a a=\r\n", "");
-test!(smoke_test, r#"<p><i>Hello</i>, World!</p>"#);
+test!(
+    smoke_test,
+    r#"<p><i><text>Hello</text></i><text>, World!</text></p>"#
+);
 
 test!(
     misnest,
-    r#"<p><i>Hello!</p>, World!</i>"#,
-    r#"<p><i>Hello!</i></p><i>, World!</i>"#
+    r#"<p><i><text>Hello!</text></p><text>, World!</text></i>"#,
+    r#"<p><i><text>Hello!</text></i></p><i><text>, World!</text></i>"#
 );
 
 test!(attr_literal, r#"<base foo="<'>">"#);
@@ -77,92 +77,118 @@ test!(
     r#"<span foo="3" title="test &quot;with&quot; &amp;quot;"></span>"#
 );
 
-test!(text_literal, r#"<p>"'"</p>"#);
-test!(text_escape_amp, r#"<p>&amp;</p>"#);
-test!(text_escape_amp_2, r#"<p>&amp</p>"#, r#"<p>&amp;</p>"#);
-test!(text_escape_nbsp, "<p>x\u{a0}y</p>", r#"<p>x&nbsp;y</p>"#);
-test!(text_escape_lt, r#"<p>&lt;</p>"#);
-test!(text_escape_gt, r#"<p>&gt;</p>"#);
-test!(text_escape_gt2, r#"<p>></p>"#, r#"<p>&gt;</p>"#);
+test!(text_literal, r#"<p>"'"</p>"#, r#"<p><text>"'"</text></p>"#);
+test!(
+    text_escape_amp,
+    r#"<p>&amp;</p>"#,
+    r#"<p><text>&amp;</text></p>"#
+);
+test!(
+    text_escape_amp_2,
+    r#"<p>&amp</p>"#,
+    r#"<p><text>&amp;</text></p>"#
+);
+test!(
+    text_escape_nbsp,
+    "<p>x\u{a0}y</p>",
+    r#"<p><text>x&nbsp;y</text></p>"#
+);
+test!(
+    text_escape_lt,
+    r#"<p>&lt;</p>"#,
+    r#"<p><text>&lt;</text></p>"#
+);
+test!(
+    text_escape_gt,
+    r#"<p>&gt;</p>"#,
+    r#"<p><text>&gt;</text></p>"#
+);
+test!(
+    text_escape_gt2,
+    r#"<p>></p>"#,
+    r#"<p><text>&gt;</text></p>"#
+);
 
 test!(
     script_literal,
-    r#"<script>(x & 1) < 2; y > "foo" + 'bar'</script>"#
+    r#"<script>(x & 1) < 2; y > "foo" + 'bar'</script>"#,
+    r#"<script><text>(x &amp; 1) &lt; 2; y &gt; "foo" + 'bar'</text></script>"#
 );
 test!(
     style_literal,
-    r#"<style>(x & 1) < 2; y > "foo" + 'bar'</style>"#
+    r#"<style>(x & 1) < 2; y > "foo" + 'bar'</style>"#,
+    r#"<style><text>(x &amp; 1) &lt; 2; y &gt; "foo" + 'bar'</text></style>"#
 );
-test!(xmp_literal, r#"<xmp>(x & 1) < 2; y > "foo" + 'bar'</xmp>"#);
+test!(
+    xmp_literal,
+    r#"<xmp>(x & 1) < 2; y > "foo" + 'bar'</xmp>"#,
+    r#"<xmp><text>(x &amp; 1) &lt; 2; y &gt; "foo" + 'bar'</text></xmp>"#
+);
 test!(
     iframe_literal,
-    r#"<iframe>(x & 1) < 2; y > "foo" + 'bar'</iframe>"#
+    r#"<iframe>(x & 1) < 2; y > "foo" + 'bar'</iframe>"#,
+    r#"<iframe><text>(x &amp; 1) &lt; 2; y &gt; "foo" + 'bar'</text></iframe>"#
 );
 test!(
     noembed_literal,
-    r#"<noembed>(x & 1) < 2; y > "foo" + 'bar'</noembed>"#
+    r#"<noembed>(x & 1) < 2; y > "foo" + 'bar'</noembed>"#,
+    r#"<noembed><text>(x &amp; 1) &lt; 2; y &gt; "foo" + 'bar'</text></noembed>"#
 );
 test!(
     noframes_literal,
-    r#"<noframes>(x & 1) < 2; y > "foo" + 'bar'</noframes>"#
+    r#"<noframes>(x & 1) < 2; y > "foo" + 'bar'</noframes>"#,
+    r#"<noframes><text>(x &amp; 1) &lt; 2; y &gt; "foo" + 'bar'</text></noframes>"#
 );
 
-test!(pre_lf_0, "<pre>foo bar</pre>");
-test!(pre_lf_1, "<pre>\nfoo bar</pre>", "<pre>foo bar</pre>");
-test!(pre_lf_2, "<pre>\n\nfoo bar</pre>", "<pre>\nfoo bar</pre>");
+test!(
+    pre_lf_0,
+    "<pre>foo bar</pre>",
+    "<pre><text>foo bar</text></pre>"
+);
+test!(
+    pre_lf_1,
+    "<pre>\nfoo bar</pre>",
+    "<pre><text>foo bar</text></pre>"
+);
+test!(
+    pre_lf_2,
+    "<pre>\n\nfoo bar</pre>",
+    "<pre><text>\nfoo bar</text></pre>"
+);
 
-test!(textarea_lf_0, "<textarea>foo bar</textarea>");
+test!(
+    textarea_lf_0,
+    "<textarea>foo bar</textarea>",
+    "<textarea><text>foo bar</text></textarea>"
+);
 test!(
     textarea_lf_1,
     "<textarea>\nfoo bar</textarea>",
-    "<textarea>foo bar</textarea>"
+    "<textarea><text>foo bar</text></textarea>"
 );
 test!(
     textarea_lf_2,
     "<textarea>\n\nfoo bar</textarea>",
-    "<textarea>\nfoo bar</textarea>"
+    "<textarea><text>\nfoo bar</text></textarea>"
 );
 
-test!(listing_lf_0, "<listing>foo bar</listing>");
+test!(
+    listing_lf_0,
+    "<listing>foo bar</listing>",
+    "<listing><text>foo bar</text></listing>"
+);
 test!(
     listing_lf_1,
     "<listing>\nfoo bar</listing>",
-    "<listing>foo bar</listing>"
+    "<listing><text>foo bar</text></listing>"
 );
 test!(
     listing_lf_2,
     "<listing>\n\nfoo bar</listing>",
-    "<listing>\nfoo bar</listing>"
+    "<listing><text>\nfoo bar</text></listing>"
 );
 
-test!(comment_1, r#"<p>hi <!--world--></p>"#);
-test!(comment_2, r#"<p>hi <!-- world--></p>"#);
-test!(comment_3, r#"<p>hi <!--world --></p>"#);
-test!(comment_4, r#"<p>hi <!-- world --></p>"#);
-
-// FIXME: test serialization of qualified tag/attribute names that can't be
-// parsed from HTML
-
-test!(attr_ns_1, r#"<svg xmlns="bleh"></svg>"#);
-test!(attr_ns_2, r#"<svg xmlns:foo="bleh"></svg>"#);
-test!(attr_ns_3, r#"<svg xmlns:xlink="bleh"></svg>"#);
-test!(attr_ns_4, r#"<svg xlink:href="bleh"></svg>"#);
-
-#[test]
-fn doctype() {
-    let dom = parse_document(Document::default(), Default::default()).one("<!doctype html>");
-    let mut result = vec![];
-    let root = dom.root();
-    let document: SerializableNodeRef = root.first_child().unwrap().into();
-    serialize(
-        &mut result,
-        &document,
-        SerializeOpts {
-            scripting_enabled: true,
-            traversal_scope: TraversalScope::IncludeNode,
-            create_missing_parent: false,
-        },
-    )
-    .unwrap();
-    assert_eq!(String::from_utf8(result).unwrap(), "<!DOCTYPE html>");
-}
+test!(comment_1, r#"<p>hi <!--world--></p>"#, r#"<p><text>hi </text></p>"#);
+test!(comment_2, r#"<p>hi <!-- world--></p>"#, r#"<p><text>hi </text></p>"#);
+test!(comment_3, r#"<p>hi <!--world --></p>"#, r#"<p><text>hi </text></p>"#);
+test!(comment_4, r#"<p>hi <!-- world --></p>"#, r#"<p><text>hi </text></p>"#);

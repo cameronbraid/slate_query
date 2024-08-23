@@ -22,7 +22,7 @@ fn test_replace_with_html() {
 fn test_set_html() {
     let doc = doc2();
     let mut q = doc.select("#main, #foot");
-    q.set_html(r#"<div id="replace">test</div>"#);
+    q.set_slate_html(r#"<div id="replace">test</div>"#);
 
     assert_eq!(doc.select("#replace").length(), 2);
     assert_eq!(doc.select("#main, #foot").length(), 2);
@@ -35,7 +35,7 @@ fn test_set_html() {
 fn test_set_html_no_match() {
     let doc = doc2();
     let mut q = doc.select("#notthere");
-    q.set_html(r#"<div id="replace">test</div>"#);
+    q.set_slate_html(r#"<div id="replace">test</div>"#);
     assert_eq!(doc.select("#replace").length(), 0);
 }
 
@@ -43,7 +43,7 @@ fn test_set_html_no_match() {
 fn test_set_html_empty() {
     let doc = doc2();
     let mut q = doc.select("#main");
-    q.set_html("");
+    q.set_slate_html("");
     assert_eq!(doc.select("#main").length(), 1);
     assert_eq!(doc.select("#main").children().length(), 0);
 }

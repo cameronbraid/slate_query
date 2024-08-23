@@ -9,12 +9,12 @@ fn main() {
 </ul>
 "#;
 
-    let document = Document::from(html);
+    let document = Document::from_slate_html(html);
 
     let items = document.select("ul").select("li");
 
     for item in items.iter() {
-        println!("{}", item.html());
+        println!("{}", item.outer_html());
         println!("{}", item.text());
     }
 }

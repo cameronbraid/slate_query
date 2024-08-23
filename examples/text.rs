@@ -1,7 +1,7 @@
 use dom_query::Document;
 
 fn main() {
-    let document = Document::from(
+    let document = Document::from_slate_html(
         r#"                <div class="loginContent">
     <div class="loginContentbg">
         <div class="el-dialog__wrapper login-dialog">

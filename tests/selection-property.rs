@@ -2,6 +2,7 @@ mod data;
 
 use data::doc;
 use data::doc2;
+use serde_json::json;
 
 #[test]
 fn test_attr_exists() {
@@ -12,10 +13,10 @@ fn test_attr_exists() {
 #[test]
 fn test_attr_or() {
     let doc = doc();
-    let attr1: &str = &doc.select("a").attr_or("fake-attribute", "alternative");
-    let attr2: &str = &doc.select("zz").attr_or("fake-attribute", "alternative");
-    assert_eq!(attr1, "alternative");
-    assert_eq!(attr2, "alternative");
+    let attr1 = &doc.select("a").attr_or("fake-attribute", json!("alternative"));
+    let attr2 = &doc.select("zz").attr_or("fake-attribute", json!("alternative"));
+    assert_eq!(attr1, &json!("alternative"));
+    assert_eq!(attr2, &json!("alternative"));
 }
 
 #[test]
@@ -38,10 +39,10 @@ fn test_remove_attr() {
 fn test_set_attr() {
     let doc = doc2();
     let mut sel = doc.select("#main");
-    sel.set_attr("id", "not-main");
+    sel.set_attr("id", json!("not-main"));
 
-    let id: &str = &sel.attr("id").expect("got an attribute");
-    assert_eq!(id, "not-main");
+    let id = sel.attr("id").expect("got an attribute");
+    assert_eq!(id, json!("not-main"));
 }
 
 #[test]
@@ -49,10 +50,10 @@ fn test_set_attr2() {
     let doc = doc2();
     let mut sel = doc.select("#main");
 
-    sel.set_attr("foo", "bar");
+    sel.set_attr("foo", json!("bar"));
 
-    let id: &str = &sel.attr("foo").expect("got an attribute");
-    assert_eq!(id, "bar");
+    let id = sel.attr("foo").expect("got an attribute");
+    assert_eq!(id, json!("bar"));
 }
 
 #[test]
@@ -69,8 +70,8 @@ fn test_add_class() {
     let mut sel = doc.select("#main");
 
     sel.add_class("main main main");
-    let class: &str = &sel.attr("class").unwrap();
-    assert_eq!(class, "main");
+    let class = sel.attr("class").unwrap();
+    assert_eq!(class, json!("main"));
 }
 
 #[test]
@@ -79,7 +80,7 @@ fn test_add_class_similar() {
     let mut sel = doc.select("#nf5");
 
     sel.add_class("odd");
-    println!("{}", sel.html());
+    println!("{}", sel.outer_html());
 
     assert!(sel.has_class("odd"));
     assert!(sel.has_class("odder"));

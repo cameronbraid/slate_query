@@ -8,7 +8,7 @@ fn pseudo_class_has() {
         <a href="/2">Two</a>
         <a href="/3"><span>Three</span></a>
     </div>"#;
-    let document = Document::from(html);
+    let document = Document::from_slate_html(html);
     let sel = r#"div:has(a[href="/1"]) a span"#;
     let span = document.select(sel);
 
@@ -24,7 +24,7 @@ fn pseudo_class_has_any_link() {
         <a href="/2">Two</a>
         <a href="/3"><span>Three</span></a>
     </div>"#;
-    let document = Document::from(html);
+    let document = Document::from_slate_html(html);
     let sel = r#"div:has(*:any-link) a span"#;
     let span = document.select(sel).first();
 
@@ -41,7 +41,7 @@ fn pseudo_class_has_bad() {
         <a href="/2">Two</a>
         <a href="/3"><span>Three</span></a>
     </div>"#;
-    let document = Document::from(html);
+    let document = Document::from_slate_html(html);
     let sel = r#"div:hasa(*:any-link) a span"#;
     let span = document.select(sel);
 
@@ -57,7 +57,7 @@ fn pseudo_class_contains_text() {
         <a href="/2">Two</a>
         <a href="/3"><span>Three</span></a>
     </div>"#;
-    let document = Document::from(html);
+    let document = Document::from_slate_html(html);
     let sel = r#"div a:has-text("Three")"#;
     let span = document.select(sel);
 
@@ -74,7 +74,7 @@ fn pseudo_class_has_text_fail() {
         <a href="/2">Two</a>
         <a href="/3">It is not <span>how</span> it works</a>
     </div>"#;
-    let document = Document::from(html);
+    let document = Document::from_slate_html(html);
     let sel = r#"div a:has-text("how it works")"#;
     // it is not going to find anything, 
     // because it is searching in the each node's text and not in the final text.
@@ -91,11 +91,11 @@ fn pseudo_class_has_text_fail() {
 fn pseudo_class_contains() {
     let html = r#"
     <div>
-        <a href="/1">One</a>
-        <a href="/2">Two</a>
-        <a href="/3">It is not <span>how</span> it works</a>
+        <a href="/1"><text>One</text></a>
+        <a href="/2"><text>Two</text></a>
+        <a href="/3"><text>It is not</text><text> how </text><text>it works</text></a>
     </div>"#;
-    let document = Document::from(html);
+    let document = Document::from_slate_html(html);
     let sel = r#"div a:contains("how it works")"#;
     let span = document.select(sel);
     // And `:contains` will match the last `a` element, 
@@ -114,7 +114,7 @@ fn pseudo_class_not() {
         <a class="link" href="/2">Two</a>
         <a class="link" href="/3">Three</a>
     </div>"#;
-    let document = Document::from(html);
+    let document = Document::from_slate_html(html);
     let sel = r#"div a.link:not(.first-link)"#;
     let span = document.select(sel).first();
     let text: &str = &span.text();

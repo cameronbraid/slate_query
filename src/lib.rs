@@ -19,7 +19,7 @@
 //!     <a href="/3">Three</a>
 //! </div>"#;
 //!
-//! let document = Document::from(html);
+//! let document = Document::from_slate_html(html);
 //! let a = document.select("a:nth-child(3)");
 //! let text: &str = &a.text();
 //! assert!(text == "Three");
@@ -41,10 +41,10 @@ mod query;
 mod selection;
 mod traversal;
 
-pub use document::Document;
-pub use dom_tree::{Node, NodeData, NodeRef};
+pub use dom_tree::{Node, NodeRef};
+pub use document::{Document, DocumentTreeSink, Attrib, Element, Text, NodeData};
 #[doc(hidden)]
-pub use dom_tree::SerializableNodeRef;
+pub use document::SerializableNodeRef;
 #[doc(hidden)]
 pub use entities::NodeId;
 pub use matcher::Matcher;

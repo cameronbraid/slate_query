@@ -1,22 +1,15 @@
+use crate::document::Attrib;
+use crate::entities::{HashSetFx, NodeId};
+use crate::{NodeData, SerializableNodeRef};
+use html5ever::serialize::{serialize, SerializeOpts, TraversalScope};
 use std::cell::{Ref, RefCell};
 use std::fmt::{self, Debug};
-use std::io;
-
-use html5ever::serialize;
-use html5ever::serialize::SerializeOpts;
-use html5ever::LocalName;
-use markup5ever::serialize::TraversalScope;
-use markup5ever::serialize::TraversalScope::{ChildrenOnly, IncludeNode};
-use markup5ever::serialize::{Serialize, Serializer};
-use markup5ever::{namespace_url, ns, Attribute, QualName};
 use tendril::StrTendril;
-
-use crate::entities::{HashSetFx, NodeId, NodeIdMap};
 
 /// Alias for `NodeRef`.
 pub type Node<'a> = NodeRef<'a, NodeData>;
 
-fn children_of<T>(nodes: &Ref<Vec<InnerNode<T>>>, id: &NodeId) -> Vec<NodeId> {
+pub(crate) fn children_of<T>(nodes: &Ref<Vec<InnerNode<T>>>, id: &NodeId) -> Vec<NodeId> {
     let mut children = vec![];
 
     if let Some(node) = nodes.get(id.value) {
@@ -36,14 +29,15 @@ fn fix_id(id: Option<NodeId>, offset: usize) -> Option<NodeId> {
     id.map(|old| NodeId::new(old.value + offset))
 }
 
-fn contains_class(classes: &str, target_class: &str) -> bool {
-    classes.split_whitespace().any(|c| c == target_class)
+fn contains_class(classes: &serde_json::Value, target_class: &str) -> bool {
+    match classes {
+        serde_json::Value::String(s) => s.split_whitespace().any(|c| c == target_class),
+        _ => false,
+    }
 }
 
-/// An implementation of arena-tree.
 pub struct Tree<T> {
-    nodes: RefCell<Vec<InnerNode<T>>>,
-    names: NodeIdMap,
+    pub(crate) nodes: RefCell<Vec<InnerNode<T>>>,
 }
 
 impl<T: Debug> Debug for Tree<T> {
@@ -57,7 +51,6 @@ impl<T: Clone> Clone for Tree<T> {
         let nodes = self.nodes.borrow();
         Self {
             nodes: RefCell::new(nodes.clone()),
-            names: self.names.clone(),
         }
     }
 }
@@ -71,7 +64,6 @@ impl<T: Debug> Tree<T> {
         let root_id = NodeId::new(0);
         Self {
             nodes: RefCell::new(vec![InnerNode::new(root_id, root)]),
-            names: NodeIdMap::default(),
         }
     }
 
@@ -81,15 +73,6 @@ impl<T: Debug> Tree<T> {
 
         nodes.push(InnerNode::new(new_child_id, data));
         new_child_id
-    }
-
-    pub fn set_name(&mut self, id: NodeId, name: QualName) {
-        self.names.insert(id, name);
-    }
-
-    pub fn get_name(&self, id: &NodeId) -> &QualName {
-        // TODO: what do we have here?
-        self.names.get(id).unwrap()
     }
 
     pub fn get(&self, id: &NodeId) -> Option<NodeRef<T>> {
@@ -373,6 +356,27 @@ impl<T: Debug> Tree<T> {
         // Put all the new nodes except the root node into the nodes.
         nodes.extend(new_nodes);
     }
+    // pub fn append_text(&self, id: &NodeId, text: StrTendril) {
+    //   let mut nodes = self.nodes.borrow_mut();
+    //   if let Some(node) = nodes.get_mut(id.value) {
+    //       match &mut node.data {
+    //           NodeData::Text { contents, .. } => {
+    //               contents.push_tendril(text);
+    //           }
+    //           _ => {}
+    //       }
+        
+    //   }
+        // self.update_node(id, |node|{
+        //     match &mut node.data {
+        //         NodeData::Text { contents, .. } => {
+        //             contents.push_tendril(text);
+        //         }
+        //         _ => {}
+        //     }
+        //     None
+        // })
+    // }
 
     pub fn remove_from_parent(&self, id: &NodeId) {
         let mut nodes = self.nodes.borrow_mut();
@@ -563,9 +567,9 @@ impl InnerNode<NodeData> {
         matches!(self.data, NodeData::Text { .. })
     }
 
-    pub fn is_comment(&self) -> bool {
-        matches!(self.data, NodeData::Comment { .. })
-    }
+    // pub fn is_comment(&self) -> bool {
+    //     matches!(self.data, NodeData::Comment { .. })
+    // }
 }
 
 impl<T: Clone> Clone for InnerNode<T> {
@@ -648,6 +652,7 @@ impl<'a, T: Debug> NodeRef<'a, T> {
         self.tree
             .append_prev_siblings_from_another_tree(&self.id, tree)
     }
+
 }
 
 impl<'a> Node<'a> {
@@ -689,22 +694,15 @@ impl<'a> Node<'a> {
 impl<'a> Node<'a> {
     pub fn node_name(&self) -> Option<StrTendril> {
         self.query(|node| match node.data {
-            NodeData::Element(ref e) => {
-                let name: &str = &e.name.local;
-                Some(StrTendril::from(name))
-            }
+            NodeData::Element(ref e) => Some(e.name.clone()),
             _ => None,
         })?
     }
 
     pub fn has_class(&self, class: &str) -> bool {
         self.query(|node| match node.data {
-            NodeData::Element(ref e) => e
-                .attrs
-                .iter()
-                .find(|attr| &attr.name.local == "class")
-                .map(|attr| contains_class(&attr.value, class))
-                .unwrap_or(false),
+            NodeData::Element(ref e) => has_class(&e.attrs, class),
+            NodeData::Text(ref e) => has_class(&e.attrs, class),
             _ => false,
         })
         .unwrap_or(false)
@@ -715,33 +713,14 @@ impl<'a> Node<'a> {
             return;
         }
 
-        self.update(|node| {
-            if let NodeData::Element(ref mut e) = node.data {
-                let mut attr = e.attrs.iter_mut().find(|attr| &attr.name.local == "class");
-
-                let set: HashSetFx<&str> = class
-                    .split(' ')
-                    .map(|s| s.trim())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-
-                if attr.is_some() {
-                    let value = &mut attr.as_mut().unwrap().value;
-                    for v in set {
-                        if !contains_class(value, v) {
-                            value.push_slice(" ");
-                            value.push_slice(v);
-                        }
-                    }
-                } else {
-                    let classes: Vec<&str> = set.into_iter().collect();
-                    let value = StrTendril::from(classes.join(" "));
-                    // The namespace on the attribute name is almost always ns!().
-                    let name = QualName::new(None, ns!(), LocalName::from("class"));
-
-                    e.attrs.push(Attribute { name, value })
-                }
+        self.update(|node| match node.data {
+            NodeData::Element(ref mut e) => {
+                add_class(&mut e.attrs, class);
             }
+            NodeData::Text(ref mut e) => {
+                add_class(&mut e.attrs, class);
+            }
+            _ => {}
         });
     }
 
@@ -750,76 +729,149 @@ impl<'a> Node<'a> {
             return;
         }
 
-        self.update(|node| {
-            if let NodeData::Element(ref mut e) = node.data {
-                if let Some(attr) = e.attrs.iter_mut().find(|attr| &attr.name.local == "class") {
-                    let mut set: HashSetFx<&str> = attr
-                        .value
-                        .split(' ')
-                        .map(|s| s.trim())
-                        .filter(|s| !s.is_empty())
-                        .collect();
-
-                    let removes = class.split(' ').map(|s| s.trim()).filter(|s| !s.is_empty());
-
-                    for remove in removes {
-                        set.remove(remove);
-                    }
-
-                    attr.value = StrTendril::from(set.into_iter().collect::<Vec<&str>>().join(" "));
-                }
+        self.update(|node| match node.data {
+            NodeData::Element(ref mut e) => {
+                remove_class(&mut e.attrs, class);
             }
+            NodeData::Text(ref mut e) => {
+                remove_class(&mut e.attrs, class);
+            }
+            _ => {}
         });
     }
 
-    pub fn attr(&self, name: &str) -> Option<StrTendril> {
+    pub fn attr_str(&self, name: &str) -> Option<StrTendril> {
         self.query(|node| match node.data {
             NodeData::Element(ref e) => e
                 .attrs
                 .iter()
-                .find(|attr| &attr.name.local == name)
+                .find(|attr| &attr.name[..] == name)
+                .and_then(|attr| attr.get_value_as_str_if_string()),
+            NodeData::Text(ref e) => e
+                .attrs
+                .iter()
+                .find(|attr| &attr.name[..] == name)
+                .and_then(|attr| attr.get_value_as_str_if_string()),
+            _ => None,
+        })
+        .flatten()
+    }
+    pub fn attr(&self, name: &str) -> Option<serde_json::Value> {
+        self.query(|node| match node.data {
+            NodeData::Element(ref e) => e
+                .attrs
+                .iter()
+                .find(|attr| &attr.name[..] == name)
+                .map(|attr| attr.value.clone()),
+            NodeData::Text(ref e) => e
+                .attrs
+                .iter()
+                .find(|attr| &attr.name[..] == name)
                 .map(|attr| attr.value.clone()),
             _ => None,
         })?
     }
 
-    pub fn attrs(&self) -> Vec<Attribute> {
+    pub fn attrs(&self) -> Vec<Attrib> {
         self.query(|node| match node.data {
-            NodeData::Element(ref e) => e.attrs.to_vec(),
+            NodeData::Element(ref e) => e.attrs.clone(),
+            NodeData::Text(ref e) => e.attrs.clone(),
             _ => vec![],
         })
         .unwrap_or_default()
     }
 
-    pub fn set_attr(&self, name: &str, val: &str) {
-        self.update(|node| {
-            if let NodeData::Element(ref mut e) = node.data {
-                let updated = e.attrs.iter_mut().any(|attr| {
-                    if &attr.name.local == name {
-                        attr.value = StrTendril::from(val);
-                        true
-                    } else {
-                        false
-                    }
-                });
-
-                if !updated {
-                    let value = StrTendril::from(val);
-                    // The namespace on the attribute name is almost always ns!().
-                    let name = QualName::new(None, ns!(), LocalName::from(name));
-
-                    e.attrs.push(Attribute { name, value })
-                }
+    pub fn set_attr(&self, name: &str, value: serde_json::Value) {
+        self.update(|node| match node.data {
+            NodeData::Element(ref mut e) => {
+                e.set_attr(name, value);
             }
+            NodeData::Text(ref mut e) => {
+                e.set_attr(name, value);
+            }
+            _ => {}
         });
     }
+    // pub(crate) fn set_attr_parse_json_or_use_as_string(&self, name: &str, value: &str) {
+    //     self.update(|node| match node.data {
+    //         NodeData::Element(ref mut e) => {
+    //             e.set_attr_parse_json_or_use_as_string(name, value);
+    //         }
+    //         NodeData::Text(ref mut e) => {
+    //             e.set_attr_parse_json_or_use_as_string(name, value);
+    //         }
+    //         _ => {}
+    //     });
+    // }
 
     pub fn remove_attr(&self, name: &str) {
-        self.update(|node| {
-            if let NodeData::Element(ref mut e) = node.data {
-                e.attrs.retain(|attr| &attr.name.local != name);
+        self.update(|node| match node.data {
+            NodeData::Element(ref mut e) => {
+                e.remove_attr(name);
             }
+            NodeData::Text(ref mut e) => {
+                e.remove_attr(name);
+            }
+            _ => {}
         });
+    }
+}
+
+fn has_class(attrs: &Vec<Attrib>, class: &str) -> bool {
+    attrs
+        .iter()
+        .find(|attr| &attr.name[..] == "class")
+        .map(|attr| contains_class(&attr.value, class))
+        .unwrap_or(false)
+}
+
+fn add_class(attrs: &mut Vec<Attrib>, class: &str) {
+    let find = attrs.iter_mut().find(|attr| &attr.name[..] == "class");
+    let mut attr = find;
+
+    let set: HashSetFx<&str> = class
+        .split(' ')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if attr.is_some() {
+        let value = &mut attr.as_mut().unwrap().value;
+        for v in set {
+            if !contains_class(value, v) {
+                json_push_slice(value, " ");
+                json_push_slice(value, v);
+            }
+        }
+    } else {
+        let classes: Vec<&str> = set.into_iter().collect();
+        // The namespace on the attribute name is almost always ns!().
+        let name = "class".into();
+        let value = serde_json::Value::String(classes.join(" "));
+        attrs.push(Attrib { name, value });
+    }
+}
+
+fn remove_class(attrs: &mut Vec<Attrib>, class: &str) {
+    if let Some(attr) = attrs.iter_mut().find(|attr| &attr.name[..] == "class") {
+        let mut set: HashSetFx<String> = attr
+            .get_value_as_str_if_string()
+            .map(|s| {
+                s.split(' ')
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let removes = class.split(' ').map(|s| s.trim()).filter(|s| !s.is_empty());
+
+        for remove in removes {
+            set.remove(remove);
+        }
+
+        attr.set_value(set.into_iter().collect::<Vec<_>>().join(" ").into());
     }
 }
 
@@ -835,30 +887,43 @@ impl<'a> Node<'a> {
     pub fn is_text(&self) -> bool {
         self.query(|node| node.is_text()).unwrap_or(false)
     }
-    pub fn is_comment(&self) -> bool {
-        self.query(|node| node.is_comment()).unwrap_or(false)
-    }
 }
 
 impl<'a> Node<'a> {
     /// Returns the HTML representation of the DOM tree.
     /// Panics if serialization fails.
-    pub fn html(&self) -> StrTendril {
-        let inner: SerializableNodeRef = self.clone().into();
+    pub fn outer_html(&self) -> StrTendril {
+      let inner: SerializableNodeRef = self.clone().into();
 
-        let mut result = vec![];
-        serialize(
-            &mut result,
-            &inner,
-            SerializeOpts {
-                scripting_enabled: true,
-                traversal_scope: TraversalScope::IncludeNode,
-                create_missing_parent: false,
-            },
-        )
-        .unwrap();
-        StrTendril::try_from_byte_slice(&result).unwrap()
-    }
+      let mut result = vec![];
+      serialize(
+          &mut result,
+          &inner,
+          SerializeOpts {
+              scripting_enabled: true,
+              traversal_scope: TraversalScope::IncludeNode,
+              create_missing_parent: false,
+          },
+      )
+      .unwrap();
+      StrTendril::try_from_byte_slice(&result).unwrap()
+  }
+  pub fn inner_html(&self) -> StrTendril {
+    let inner: SerializableNodeRef = self.clone().into();
+
+    let mut result = vec![];
+    serialize(
+        &mut result,
+        &inner,
+        SerializeOpts {
+            scripting_enabled: true,
+            traversal_scope: TraversalScope::ChildrenOnly(None),
+            create_missing_parent: false,
+        },
+    )
+    .unwrap();
+    StrTendril::try_from_byte_slice(&result).unwrap()
+}
 
     pub fn text(&self) -> StrTendril {
         let mut ops = vec![self.id];
@@ -874,7 +939,7 @@ impl<'a> Node<'a> {
                         }
                     }
 
-                    NodeData::Text { ref contents } => text.push_tendril(contents),
+                    NodeData::Text(ref t) => text.push_tendril(&t.contents),
 
                     _ => continue,
                 }
@@ -895,8 +960,8 @@ impl<'a> Node<'a> {
                         }
                     }
 
-                    NodeData::Text { ref contents } => {
-                        if contents.contains(needle) {
+                    NodeData::Text(ref t) => {
+                        if t.contents.contains(needle) {
                             return true;
                         }
                     }
@@ -909,143 +974,11 @@ impl<'a> Node<'a> {
     }
 }
 
-/// The different kinds of nodes in the DOM.
-#[derive(Debug, Clone)]
-pub enum NodeData {
-    /// The `Tree` itself - the root node of a HTML tree.
-    Document,
-
-    /// A `DOCTYPE` with name, public id, and system id. See
-    /// [tree type declaration on wikipedia][dtd wiki].
-    ///
-    /// [dtd wiki]: https://en.wikipedia.org/wiki/Tree_type_declaration
-    Doctype {
-        name: StrTendril,
-        public_id: StrTendril,
-        system_id: StrTendril,
-    },
-
-    /// A text node.
-    Text { contents: StrTendril },
-
-    /// A comment.
-    Comment { contents: StrTendril },
-
-    /// An element with attributes.
-    Element(Element),
-
-    /// A Processing instruction.
-    ProcessingInstruction {
-        target: StrTendril,
-        contents: StrTendril,
-    },
-}
-
-/// An element with attributes.
-#[derive(Debug, Clone)]
-pub struct Element {
-    pub name: QualName,
-    pub attrs: Vec<Attribute>,
-
-    /// For HTML \<template\> elements, the [template contents].
-    ///
-    /// [template contents]: https://html.spec.whatwg.org/multipage/#template-contents
-    pub template_contents: Option<NodeId>,
-
-    /// Whether the node is a [HTML integration point].
-    ///
-    /// [HTML integration point]: https://html.spec.whatwg.org/multipage/#html-integration-point
-    #[allow(dead_code)]
-    mathml_annotation_xml_integration_point: bool,
-}
-
-impl Element {
-    pub fn new(
-        name: QualName,
-        attrs: Vec<Attribute>,
-        template_contents: Option<NodeId>,
-        mathml_annotation_xml_integration_point: bool,
-    ) -> Element {
-        Element {
-            name,
-            attrs,
-            template_contents,
-            mathml_annotation_xml_integration_point,
+fn json_push_slice(value: &mut serde_json::Value, slice: &str) {
+    match value {
+        serde_json::Value::String(s) => {
+            s.push_str(slice);
         }
-    }
-}
-
-enum SerializeOp {
-    Open(NodeId),
-    Close(QualName),
-}
-/// Serializable wrapper of Node.
-pub struct SerializableNodeRef<'a>(Node<'a>);
-
-impl<'a> From<NodeRef<'a, NodeData>> for SerializableNodeRef<'a> {
-    fn from(h: NodeRef<'a, NodeData>) -> SerializableNodeRef {
-        SerializableNodeRef(h)
-    }
-}
-
-impl<'a> Serialize for SerializableNodeRef<'a> {
-    fn serialize<S>(&self, serializer: &mut S, traversal_scope: TraversalScope) -> io::Result<()>
-    where
-        S: Serializer,
-    {
-        let nodes = self.0.tree.nodes.borrow();
-        let id = self.0.id;
-        let mut ops = match traversal_scope {
-            IncludeNode => vec![SerializeOp::Open(id)],
-            ChildrenOnly(_) => children_of(&nodes, &id)
-                .into_iter()
-                .map(SerializeOp::Open)
-                .collect(),
-        };
-
-        while !ops.is_empty() {
-            match ops.remove(0) {
-                SerializeOp::Open(id) => {
-                    let node_opt = &nodes.get(id.value);
-                    let node = match node_opt {
-                        Some(node) => node,
-                        None => continue,
-                    };
-
-                    match node.data {
-                        NodeData::Element(ref e) => {
-                            serializer.start_elem(
-                                e.name.clone(),
-                                e.attrs.iter().map(|at| (&at.name, &at.value[..])),
-                            )?;
-
-                            ops.insert(0, SerializeOp::Close(e.name.clone()));
-
-                            for child_id in children_of(&nodes, &id).into_iter().rev() {
-                                ops.insert(0, SerializeOp::Open(child_id));
-                            }
-
-                            Ok(())
-                        }
-                        NodeData::Doctype { ref name, .. } => serializer.write_doctype(name),
-                        NodeData::Text { ref contents } => serializer.write_text(contents),
-                        NodeData::Comment { ref contents } => serializer.write_comment(contents),
-                        NodeData::ProcessingInstruction {
-                            ref target,
-                            ref contents,
-                        } => serializer.write_processing_instruction(target, contents),
-                        NodeData::Document => {
-                            for child_id in children_of(&nodes, &id).into_iter().rev() {
-                                ops.insert(0, SerializeOp::Open(child_id));
-                            }
-                            continue;
-                        }
-                    }
-                }
-                SerializeOp::Close(name) => serializer.end_elem(name),
-            }?
-        }
-
-        Ok(())
+        _ => {}
     }
 }

@@ -2,13 +2,13 @@
 use dom_query::Document;
 
 pub fn doc() -> Document {
-    include_str!("../test-pages/page.html").into()
+  Document::from_slate_html(&include_str!("../test-pages/page.html"))
 }
 
 pub fn docwiki() -> Document {
-    include_str!("../test-pages/rustwiki.html").into()
+  Document::from_slate_html(&include_str!("../test-pages/rustwiki.html"))
 }
 
 pub fn doc2() -> Document {
-    include_str!("../test-pages/page2.html").into()
+  Document::from_slate_html(&include_str!("../test-pages/page2.html"))
 }

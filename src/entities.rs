@@ -1,3 +1,5 @@
+use std::usize;
+
 use markup5ever::QualName;
 
 /// Node ID.
@@ -31,4 +33,4 @@ mod inline {
     pub type HashSetFx<K> = FxHashSet<K>;
 }
 
-pub(crate) use inline::{HashSetFx, NodeIdMap, NodeIdSet};
+pub(crate) use inline::{HashSetFx, NodeIdSet, NodeIdMap};

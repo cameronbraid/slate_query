@@ -6,8 +6,9 @@ use selectors::parser::{self, SelectorList, SelectorParseErrorKind};
 use selectors::{matching, visitor, Element, NthIndexCache};
 
 use crate::css::{CssLocalName, CssString};
-use crate::dom_tree::{NodeData, NodeRef};
+use crate::dom_tree::NodeRef;
 use crate::entities::NodeIdSet;
+use crate::NodeData;
 
 /// CSS selector.
 #[derive(Clone, Debug)]
